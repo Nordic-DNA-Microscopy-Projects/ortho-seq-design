@@ -1,0 +1,11 @@
+% NUPACK 3.2.2
+% Program: mfe
+% Start time: Wed Sep 30 23:17:12 2020
+% Command: /home/ian/nupack3.2.2/build/bin/mfe -material dna -sodium 1 -magnesium 0.2 -dangles some -T 60 
+% Sequence:  
+% v(pi): 1
+% Parameters: DNA, 1998
+% Dangles setting: 1
+% Temperature (C): 60.0
+% Sodium concentration: 1.0000 M
+% Magnesium concentration: 0.2000 M
