@@ -3,6 +3,7 @@ import random
 import numpy as np
 from Bio.Seq import Seq
 import matplotlib.pyplot as plt
+from Bio.SeqUtils import MeltingTemp as mt
 # from Bio import AlignIO
 # from Bio.Align import MultipleSeqAlignment
 # from Bio import AlignIO
@@ -37,6 +38,10 @@ def longest(s):
         maximum = max(count,maximum)
     return maximum
 
+def random_seq_of_length(length):
+    seq = ''.join(random.choice("ATGC") for _ in range(length))
+    return seq
+
 def mutate(sequence, base_sampling_key):
     base = random.randrange(len(sequence))    
     new_base = np.random.choice(base_sampling_key[sequence[base]][0],p=base_sampling_key[sequence[base]][1])
@@ -61,6 +66,20 @@ def get_most_represented_base_freq(sequence):
     penalty = (1+(max_freq1-0.25))*1+(max_freq2-0.25)
     return penalty
 
+# def tm():
+# for seq in inp.values():
+#     N = len(seq)
+#     dA = seq.count("A")
+#     dG = seq.count("G")
+#     dC = seq.count("C")
+#     dT = seq.count("T")
+#     GC = float(dG+dC)/float(N) #in percent %
+#     print(GC)
+#     cation = sodium + 120*np.sqrt(magnesium - dNTPs)
+#     owen_Tm = 87.16 + 0.345*GC + np.log(cation)*(20.17 - 0.066*GC) - .75*percentDMSO
+    
+#     print(owen_Tm)
+
 def prime(sequence):
     complement = Seq(sequence).reverse_complement().__str__()
     return complement
@@ -81,7 +100,7 @@ def get_interaction_score(domains, domains_c,T=25,magnesium=0, sodium=1.0):
     master_score = target_reaction_score-cross_reaction_score
     return master_score,problematic_row
 
-def get_quick_interaction_score(domains, domains_c,row,T=25,magnesium=0, sodium=1.0):
+def get_quick_interaction_score(domains, domains_c,row,T=25,magnesium=0, sodium=1.0, tm_target = 60):
     no_domains = len(domains)
     no_domains_c = len(domains_c)
     e_vec_domains = np.zeros((no_domains))
@@ -89,7 +108,9 @@ def get_quick_interaction_score(domains, domains_c,row,T=25,magnesium=0, sodium=
         e_vec_domains[i] = get_duplex_energy([domains[row], domains_c[i]], T = T, magnesium = magnesium, sodium=sodium)
     target_score = e_vec_domains[row]
     cross_reactions = np.sum(np.delete(e_vec_domains, row))
-    quick_score = target_score-cross_reactions*longest(domains[row])*get_most_represented_base_freq(domains[row])
+    tm_wallace = mt.Tm_Wallace(domains[row])
+    tm_penalty = np.abs(tm_target-tm_wallace)
+    quick_score = target_score-cross_reactions*longest(domains[row])*get_most_represented_base_freq(domains[row])*tm_penalty
     return quick_score
     
 def get_energy_matrix(domains, domains_c,T=25,magnesium=0, sodium=1.0):
@@ -103,8 +124,9 @@ def get_energy_matrix(domains, domains_c,T=25,magnesium=0, sodium=1.0):
 
 def optimize_domains_quick(input_domains_dict,fixed_domains_dict, iterations, algorithm_reversion_probability = 0.1,plot_interval=20,file_prefix="", T = 25, magnesium = 0.0, sodium=1.0):
     base_sampling_key = get_base_sampling_key(pA = .25, pT = .25, pC =.25, pG = .25)
-    input_domains = input_domains_dict.values()
+    input_domains = [seq for seq,temp in input_domains_dict.values()]
     fixed_domains = fixed_domains_dict.values()
+    tms = [temp for seq,temp in input_domains_dict.values()]
     domains = input_domains+fixed_domains+get_complements_list(input_domains+fixed_domains)    
     scores = np.zeros((np.round(iterations/plot_interval)))
     random_starting_domain =random.choice(range(0,len(input_domains)))
@@ -114,7 +136,7 @@ def optimize_domains_quick(input_domains_dict,fixed_domains_dict, iterations, al
         number_of_mutations = 1
         for mutation in range(0,number_of_mutations):
             domain_pick = (random_starting_domain + iteration)%len(input_domains) #problematic_row #random.choice(range(0,len(input_domains)))
-            initial_score = get_quick_interaction_score(domains, get_complements_list(domains), row=domain_pick, T = T, magnesium = magnesium, sodium=sodium)
+            initial_score = get_quick_interaction_score(domains, get_complements_list(domains), row=domain_pick, T = T, magnesium = magnesium, sodium=sodium, tm_target = tms[domain_pick])
             proposed_new_domain = mutate(domains[domain_pick],base_sampling_key)
             if domain_pick == 0:
                 proposed_new_input_domains = [proposed_new_domain]+domains[1:len(input_domains)]    
@@ -122,7 +144,7 @@ def optimize_domains_quick(input_domains_dict,fixed_domains_dict, iterations, al
             else:
                 proposed_new_input_domains = domains[0:domain_pick]+[proposed_new_domain]+domains[domain_pick+1:len(input_domains)]
             proposed_new_domains = proposed_new_input_domains+fixed_domains+get_complements_list(proposed_new_input_domains+fixed_domains)
-            proposed_score = get_quick_interaction_score(proposed_new_domains, get_complements_list(proposed_new_domains),row=domain_pick, T = T, magnesium = magnesium, sodium=sodium)
+            proposed_score = get_quick_interaction_score(proposed_new_domains, get_complements_list(proposed_new_domains),row=domain_pick, T = T, magnesium = magnesium, sodium=sodium, tm_target = tms[domain_pick])
         if proposed_score < initial_score or random.random() < algorithm_reversion_probability:
             
             domains = [] + proposed_new_domains
@@ -132,7 +154,7 @@ def optimize_domains_quick(input_domains_dict,fixed_domains_dict, iterations, al
             plot_energy_matrix(domains,name= file_prefix+"energy_matrix"+str(int(iteration/plot_interval))+".svg" )
 #             print(iteration, scores)
 #             scores[int(iteration/plot_interval)],problematic_row = get_interaction_score(domains, get_complements_list(domains), T = T, magnesium = magnesium, sodium=sodium)
-    new_variable_domain_dict = dict(zip(input_domains_dict.keys(), domains[0:len(input_domains)]))
+    new_variable_domain_dict = dict(zip(input_domains_dict.keys(), zip(domains[0:len(input_domains)], tms)   ))
     return new_variable_domain_dict
 
 
