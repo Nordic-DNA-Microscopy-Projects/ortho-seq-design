@@ -109,7 +109,7 @@ def get_quick_interaction_score(domains, domains_c,row,T=25,magnesium=0, sodium=
     target_score = e_vec_domains[row]
     cross_reactions = np.sum(np.delete(e_vec_domains, row))
     tm_wallace = mt.Tm_Wallace(domains[row])
-    tm_penalty = np.abs(tm_target-tm_wallace)
+    tm_penalty = 1+np.abs(tm_target-tm_wallace)
     quick_score = target_score-cross_reactions*longest(domains[row])*get_most_represented_base_freq(domains[row])*tm_penalty
     return quick_score
     
